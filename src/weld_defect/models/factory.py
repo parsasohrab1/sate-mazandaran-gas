@@ -1,6 +1,6 @@
 """Model factory — build, save, and load models.
 
-Implements SRS FR-2.1 (support for CustomCNN, ResNet50, EfficientNet-B0, Ensemble).
+Implements SRS FR-2.1 (support for CustomCNN, ResNet50, EfficientNet-B0, EfficientNetV2-S, Ensemble).
 """
 
 from __future__ import annotations
@@ -12,7 +12,9 @@ import torch
 import torch.nn as nn
 
 from .custom_cnn import CustomCNN
+from .custom_cnn_v2 import CustomCNNv2
 from .efficientnet import EfficientNetB0Classifier
+from .efficientnet_v2 import EfficientNetV2SClassifier
 from .ensemble import EnsembleModel
 from .resnet import ResNet50Classifier
 
@@ -20,10 +22,16 @@ _REGISTRY: dict[str, type[nn.Module]] = {
     "custom_cnn": CustomCNN,
     "customcnn": CustomCNN,
     "cnn": CustomCNN,
+    "custom_cnn_v2": CustomCNNv2,
+    "customcnn_v2": CustomCNNv2,
+    "cnn_v2": CustomCNNv2,
     "resnet50": ResNet50Classifier,
     "resnet": ResNet50Classifier,
     "efficientnet_b0": EfficientNetB0Classifier,
     "efficientnet": EfficientNetB0Classifier,
+    "efficientnetv2_s": EfficientNetV2SClassifier,
+    "efficientnet_v2_s": EfficientNetV2SClassifier,
+    "efficientnet_v2": EfficientNetV2SClassifier,
     "ensemble": EnsembleModel,
 }
 
@@ -69,7 +77,7 @@ def build_model(
         )
 
     # Pretrained flag only applies to transfer-learning backbones.
-    if cls is CustomCNN:
+    if cls in (CustomCNN, CustomCNNv2):
         return cls(num_classes=num_classes, dropout=dropout)
     return cls(num_classes=num_classes, pretrained=pretrained, dropout=dropout)
 

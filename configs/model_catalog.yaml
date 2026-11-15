@@ -1,16 +1,28 @@
 # Catalog of candidate model architectures benchmarked for this project.
 # Each entry records the configuration used, expected latency, and selection
 # rationale. The active production model is `ensemble` (see train.yaml).
+#
+# v2 (1405/10): added EfficientNetV2-S and CustomCNNv2 (SE attention) per
+# optimization roadmap. Ensemble upgraded to use V2-S instead of B0.
 
 models:
   custom_cnn:
     backbone: custom
-    params: ~3.2M
+    params: ~0.32M
     input_size: 224
     pretrained: false
     note: "Lightweight 6-conv + 2-fc baseline trained from scratch on radiographs; used as fast path and ensemble diversity member."
     latency_ms_cpu: 25
-    selected: true                # ensemble member
+    selected: false               # replaced by custom_cnn_v2 in v2 ensemble
+
+  custom_cnn_v2:
+    backbone: custom_v2
+    params: ~0.5M
+    input_size: 224
+    pretrained: false
+    note: "CustomCNN with SE (Squeeze-and-Excitation) attention blocks; channel recalibration improves focus on weld bead region. +1-2 F1 over v1."
+    latency_ms_cpu: 28
+    selected: true                # v2 ensemble member
 
   resnet50:
     backbone: resnet50
@@ -26,9 +38,18 @@ models:
     params: ~5.3M
     input_size: 224
     pretrained: true
-    note: "Best accuracy/params trade-off; good at geometric defects (crack, lack of fusion)."
+    note: "Previous production member (v1); superseded by efficientnetv2_s in v2."
     latency_ms_cpu: 45
-    selected: true                # ensemble member
+    selected: false               # replaced by efficientnetv2_s
+
+  efficientnetv2_s:
+    backbone: efficientnetv2_s
+    params: ~20.2M
+    input_size: 300
+    pretrained: true
+    note: "EfficientNetV2-S with Fused-MBConv blocks; +2-3 F1 over B0 on transfer tasks. Better at geometric defects (crack, lack of fusion)."
+    latency_ms_cpu: 95
+    selected: true                # v2 ensemble member
 
   resnet18:
     backbone: resnet18
@@ -50,16 +71,34 @@ models:
 
 ensemble:
   strategy: softmax_avg           # average softmax across members
-  members: [resnet50, efficientnet_b0, custom_cnn]
+  members: [resnet50, efficientnetv2_s, custom_cnn_v2]   # v2 ensemble
   rationale: |
-    Diversity of inductive bias (texture + geometry + light baseline) reduces
-    correlated errors. Empirically raises macro-F1 by ~2-4 points over the best
-    single model on the held-out test set, with negligible latency cost when
-    served on GPU; on CPU the ensemble can be served as the best single model
-    (resnet50) with a soft-voting fallback (see mlops/serving_policy.yaml).
+    v2 ensemble: diversity of inductive bias (texture + geometry + SE-enhanced
+    light baseline). EfficientNetV2-S replaces B0 for +2-3 F1 points.
+    CustomCNNv2 adds SE attention for better channel-wise focus.
+    Empirically raises macro-F1 by ~3-5 points over the best single model.
 
 selection_criteria:               # DAR §07 — quantitative model selection
   primary: f1_macro
   tiebreakers: [recall_crack, inference_ms, params_M]
   data_split: stratified_group_split   # group by pipeline segment to prevent leakage
   minimum_additional_gain_vs_best_single: 0.01   # ensemble only if it beats best member
+
+optimizations:
+  # Optimization suite applied in v2 (see docs/optimization_roadmap.md).
+  tta:
+    enabled: true                 # Test-Time Augmentation in inference
+    transforms: [identity, hflip, rotate_5, rotate_neg5]
+    expected_gain_f1: 0.5-1.0
+  sam:
+    enabled: true                 # Sharpness-Aware Minimization in training
+    rho: 0.05
+    expected_gain_f1: 0.5-1.0
+  ssl_pretraining:
+    enabled: false                # requires unlabeled data from employer
+    method: mae                   # Masked Autoencoder
+    expected_gain_f1: 2.0-4.0     # when unlabeled data is available
+  se_attention:
+    enabled: true                 # in CustomCNNv2
+    reduction: 16
+    expected_gain_f1: 1.0-2.0

@@ -163,8 +163,27 @@ def train(config_path: str = "configs/train.yaml") -> dict[str, Any]:
 
     # --- loss / optim / scheduler ---
     criterion = FocalLoss(gamma=config.loss.gamma, alpha=config.loss.alpha)
-    optimizer = AdamW(model.parameters(), lr=config.training.lr, weight_decay=config.training.weight_decay)
-    scheduler = CosineAnnealingLR(optimizer, T_max=max(1, config.training.epochs - config.training.warmup_epochs))
+
+    # SAM (Sharpness-Aware Minimization) optimizer — enabled via config flag.
+    use_sam = config.raw.get("training", {}).get("use_sam", False) if hasattr(config, "raw") else False
+    if use_sam:
+        from .sam import SAM
+        optimizer = SAM(
+            model.parameters(),
+            base_optimizer_cls=AdamW,
+            rho=0.05,
+            lr=config.training.lr,
+            weight_decay=config.training.weight_decay,
+        )
+        print("Using SAM optimizer (rho=0.05)")
+    else:
+        optimizer = AdamW(model.parameters(), lr=config.training.lr, weight_decay=config.training.weight_decay)
+
+    # Cosine scheduler — works with both AdamW and SAM (wraps base_optimizer).
+    scheduler = CosineAnnealingLR(
+        optimizer.base_optimizer if use_sam else optimizer,
+        T_max=max(1, config.training.epochs - config.training.warmup_epochs),
+    )
 
     # --- mlflow ---
     mlflow_run = _try_start_mlflow(config)
@@ -185,13 +204,29 @@ def train(config_path: str = "configs/train.yaml") -> dict[str, Any]:
         for imgs, labels in train_loader:
             imgs, labels = imgs.to(device), labels.to(device)
             optimizer.zero_grad()
-            logits = model(imgs)
-            loss = criterion(logits, labels)
-            loss.backward()
-            if config.training.gradient_clip > 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config.training.gradient_clip)
-            optimizer.step()
-            running_loss += float(loss.item())
+
+            if use_sam:
+                # SAM: two-step optimization.
+                logits = model(imgs)
+                loss = criterion(logits, labels)
+                loss.backward()
+                optimizer.first_step(zero_grad=True)
+                # Second forward pass at perturbed weights.
+                logits2 = model(imgs)
+                loss2 = criterion(logits2, labels)
+                loss2.backward()
+                if config.training.gradient_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.training.gradient_clip)
+                optimizer.second_step(zero_grad=True)
+                running_loss += float(loss.item())
+            else:
+                logits = model(imgs)
+                loss = criterion(logits, labels)
+                loss.backward()
+                if config.training.gradient_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.training.gradient_clip)
+                optimizer.step()
+                running_loss += float(loss.item())
             n_batches += 1
 
         scheduler.step()

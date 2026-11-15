@@ -1,7 +1,11 @@
-"""Single-image inference.
+"""Single-image inference with Test-Time Augmentation (TTA).
 
 Implements SRS FR-4 (inference API) at the library level — the FastAPI app
 in ``weld_defect.api.app`` wraps this.
+
+TTA applies multiple augmentations at inference time and averages the
+softmax predictions, typically improving F1 by +0.5-1 point at the cost
+of ~4× latency. For safety-critical crack detection, this is worthwhile.
 """
 
 from __future__ import annotations
@@ -12,16 +16,52 @@ from typing import Any
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from . import CLASS_NAMES
 from .data.preprocess import PreprocessPipeline, preprocess_image
 from .models.factory import build_model, load_model
 
-SERVICE_VERSION = "1.0.0"
+SERVICE_VERSION = "2.0.0"  # bumped for TTA + optimization suite
+
+
+def _identity(x: torch.Tensor) -> torch.Tensor:
+    return x
+
+
+def _hflip(x: torch.Tensor) -> torch.Tensor:
+    return torch.flip(x, dims=[-1])
+
+
+def _rotate_5(x: torch.Tensor) -> torch.Tensor:
+    """Rotate image by +5 degrees using affine_grid + grid_sample."""
+    import torchvision.transforms.functional as TF
+    return TF.rotate(x, 5)
+
+
+def _rotate_neg5(x: torch.Tensor) -> torch.Tensor:
+    """Rotate image by -5 degrees using affine_grid + grid_sample."""
+    import torchvision.transforms.functional as TF
+    return TF.rotate(x, -5)
+
+
+# Default TTA augments: identity + horizontal flip + ±5° rotation.
+DEFAULT_TTA_TRANSFORMS = [_identity, _hflip, _rotate_5, _rotate_neg5]
 
 
 class WeldPredictor:
-    """Load a trained model and run inference on individual images."""
+    """Load a trained model and run inference on individual images.
+
+    Args:
+        checkpoint_path: Path to the model checkpoint.
+        architecture: Model architecture name.
+        input_size: Image input size.
+        device: 'cpu' or 'cuda'.
+        num_classes: Number of classes.
+        class_names: List of class names.
+        tta_enabled: If True, use Test-Time Augmentation (4× latency, +0.5-1 F1).
+        tta_transforms: List of augmentation functions for TTA.
+    """
 
     def __init__(
         self,
@@ -31,11 +71,15 @@ class WeldPredictor:
         device: str = "cpu",
         num_classes: int = 6,
         class_names: list[str] | None = None,
+        tta_enabled: bool = False,
+        tta_transforms: list | None = None,
     ) -> None:
         self.input_size = input_size
         self.device = torch.device(device)
         self.class_names = class_names or list(CLASS_NAMES)
         self.num_classes = num_classes
+        self.tta_enabled = tta_enabled
+        self.tta_transforms = tta_transforms or DEFAULT_TTA_TRANSFORMS
 
         if checkpoint_path and Path(checkpoint_path).exists():
             try:
@@ -50,7 +94,6 @@ class WeldPredictor:
                 self.model_loaded = False
                 self.architecture_name = architecture
         else:
-            # No checkpoint — build untrained model (degraded mode).
             self.model = build_model(architecture, num_classes=num_classes, pretrained=False).to(self.device)
             self.model_loaded = False
             self.architecture_name = architecture
@@ -64,12 +107,31 @@ class WeldPredictor:
         else:
             image = self._pipeline(image)
 
-        # HWC float32 [0,1] → CHW normalized.
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
         image = (image - mean) / std
         image = np.transpose(image, (2, 0, 1))  # HWC → CHW
         return torch.from_numpy(image.astype(np.float32)).unsqueeze(0).to(self.device)
+
+    def _predict_tta(self, tensor: torch.Tensor) -> np.ndarray:
+        """Run prediction with TTA: average softmax over augmentations."""
+        all_probs = []
+        with torch.no_grad():
+            for transform in self.tta_transforms:
+                augmented = transform(tensor)
+                logits = self.model(augmented)
+                probs = torch.softmax(logits, dim=1)[0]
+                all_probs.append(probs)
+        # Average across augmentations.
+        avg_probs = torch.stack(all_probs).mean(dim=0).cpu().numpy()
+        return avg_probs
+
+    def _predict_single(self, tensor: torch.Tensor) -> np.ndarray:
+        """Standard single-pass prediction (no TTA)."""
+        with torch.no_grad():
+            logits = self.model(tensor)
+            probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
+        return probs
 
     def predict(self, image: np.ndarray | str, image_name: str = "image") -> dict[str, Any]:
         """Run inference on a single image.
@@ -84,9 +146,10 @@ class WeldPredictor:
         t0 = time.perf_counter()
         tensor = self._to_tensor(image)
 
-        with torch.no_grad():
-            logits = self.model(tensor)
-            probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
+        if self.tta_enabled:
+            probs = self._predict_tta(tensor)
+        else:
+            probs = self._predict_single(tensor)
 
         inference_ms = (time.perf_counter() - t0) * 1000
 
@@ -103,6 +166,7 @@ class WeldPredictor:
             "top_k": top_k,
             "inference_ms": float(inference_ms),
             "model": f"{self.architecture_name}-v{SERVICE_VERSION}",
+            "tta_used": self.tta_enabled,
             "decision_support_only": True,
         }
 
