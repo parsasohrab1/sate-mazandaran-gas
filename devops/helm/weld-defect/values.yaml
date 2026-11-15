@@ -1,0 +1,99 @@
+# Default values for the weld-defect Helm chart.
+# Override per-environment via -f or --set.
+
+replicaCount: 2
+
+image:
+  repository: registry/weld-defect-api
+  tag: 1.0.0
+  pullPolicy: IfNotPresent
+  # pullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 0
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+ingress:
+  enabled: false
+  className: nginx
+  host: weld-defect.satemazandaran.internal
+  tls:
+    enabled: true
+    secretName: weld-api-tls
+
+resources:
+  requests: { cpu: "500m", memory: "1Gi" }
+  limits:   { cpu: "2000m", memory: "4Gi" }
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: 75
+
+# Canary deployment (serving_policy.yaml). When enabled, a second Deployment
+# receives `canary.trafficPercent`% via a weighted Service.
+canary:
+  enabled: false
+  trafficPercent: 10
+  image:
+    tag: 1.1.0-rc.1
+
+mlflow:
+  trackingUri: http://mlflow:5000
+  experiment: weld-defect-detection
+  modelName: weld-defect-ensemble
+  # backendStoreUri is set by Terraform for production (Postgres).
+  backendStoreUri: ""
+
+env:
+  APP_ENV: production
+  APP_LOG_LEVEL: INFO
+  MODEL_CHECKPOINT: /models/ensemble_best.pt
+  DATA_ROOT: /data
+  API_MAX_UPLOAD_MB: "10"
+  API_CONF_THRESHOLD: "0.5"
+
+# Sensitive values — provide via --set or an external Secret/Vault.
+secrets:
+  apiKey: "REPLACE"
+  jwtSecret: "REPLACE"
+
+persistence:
+  models:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  data:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+
+mlflowServer:
+  enabled: true
+  image:
+    repository: sate-mazandaran-gas/mlflow
+    tag: 1.0.0
+  service:
+    port: 5000
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# Prometheus monitoring (QPM alerts) — optional sidecar/scrape config.
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring

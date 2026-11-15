@@ -1,0 +1,26 @@
+# Keep build contexts small.
+.git
+.github
+.gitlab
+.venv
+.env
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+coverage.xml
+mlruns
+mlartifacts
+logs/*
+metrics/*
+data/raw/*
+data/processed/*
+data/synthetic/*.png
+site
+*.egg-info
+.ipynb_checkpoints
+tests
+docs/CMMI_ML5/_build

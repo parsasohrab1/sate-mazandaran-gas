@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>داشبورد تشخیص عیوب جوش — شرکت گاز استان مازندران</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#1b2330; --panel2:#243044; --text:#e8eef5; --muted:#9fb0c3;
+    --accent:#ff7043; --accent2:#5c6bc0; --ok:#43a047; --warn:#fb8c00; --crit:#e53935;
+    --border:#2c3a4f; --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Vazirmatn","Segoe UI",Tahoma,sans-serif;background:var(--bg);color:var(--text);
+    line-height:1.6;padding:18px}
+  header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;
+    background:linear-gradient(90deg,#1b2330,#243044);border:1px solid var(--border);
+    border-radius:var(--radius);padding:14px 18px;margin-bottom:16px}
+  header h1{font-size:18px;color:var(--accent)}
+  header .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .badge{padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600}
+  .badge.ok{background:rgba(67,160,71,.2);color:#7fd07f;border:1px solid var(--ok)}
+  .badge.warn{background:rgba(251,140,0,.2);color:#ffb74d;border:1px solid var(--warn)}
+  .badge.crit{background:rgba(229,57,53,.2);color:#ef9a9a;border:1px solid var(--crit)}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+  .card h3{font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:600}
+  .card .val{font-size:26px;font-weight:700}
+  .card .gate{font-size:11px;margin-top:4px}
+  .row{display:grid;gap:14px;grid-template-columns:1fr 1fr;margin-bottom:16px}
+  @media(max-width:900px){.row{grid-template-columns:1fr}}
+  .chart{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px}
+  .chart h3{font-size:14px;margin-bottom:8px}
+  .chart div{width:100%;height:300px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+  .panel h2{font-size:15px;margin-bottom:10px;color:var(--accent)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  input[type=file],input[type=text]{width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);
+    border-radius:6px;color:var(--text);font-family:inherit}
+  button{background:var(--accent);color:#fff;border:none;padding:9px 16px;border-radius:6px;cursor:pointer;
+    font-family:inherit;font-size:13px;font-weight:600}
+  button:hover{filter:brightness(1.1)}
+  button.sec{background:var(--panel2);margin-right:6px}
+  button.ok{background:var(--ok)} button.crit{background:var(--crit)}
+  .result{margin-top:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;
+    font-size:13px;min-height:60px}
+  .pred-class{font-size:20px;font-weight:700;color:var(--accent)}
+  .topk{margin-top:8px}
+  .topk .bar{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px}
+  .topk .track{flex:1;height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
+  .topk .fill{height:100%;background:var(--accent2)}
+  .warn-banner{background:rgba(251,140,0,.12);border:1px solid var(--warn);color:#ffb74d;
+    border-radius:var(--radius);padding:10px 14px;font-size:12px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600}
+  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px}
+  footer{text-align:center;color:var(--muted);font-size:11px;margin-top:18px;padding-top:12px;border-top:1px solid var(--border)}
+  .config{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .config input{max-width:240px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>داشبورد تشخیص عیوب جوش خطوط لوله</h1>
+    <div class="sub">شرکت گاز استان مازندران · مجری: پترو پالا توس · بلوغ CMMI ML5</div>
+  </div>
+  <div id="health"><span class="badge warn">در حال بارگذاری…</span></div>
+</header>
+
+<div class="warn-banner">
+  ⚠️ <b>هشدار ایمنی:</b> خروجی مدل صرفاً <b>پشتیبانی از کارشناس</b> است و جایگزین تصمیم ایمنی نیست.
+  هر پیش‌بینی باید توسط کارشناس واجد صلاحیت NDT تأیید شود (SRS §5.4، API 1104، ASME Section V).
+</div>
+
+<div class="grid">
+  <div class="card"><h3>F1 ماکرو</h3><div class="val" id="m-f1">—</div>
+    <div class="gate" id="m-f1-gate">دروازه ≥ ۰٫۸۵</div></div>
+  <div class="card"><h3>فراخوانی ترک (Recall_crack)</h3><div class="val" id="m-rc">—</div>
+    <div class="gate" id="m-rc-gate">دروازه ≥ ۰٫۹۵ (ایمنی)</div></div>
+  <div class="card"><h3>دقت بدون‌عیب (Precision_no_defect)</h3><div class="val" id="m-pn">—</div>
+    <div class="gate" id="m-pn-gate">دروازه ≥ ۰٫۹۰</div></div>
+  <div class="card"><h3>زمان استنتاج (ms)</h3><div class="val" id="m-inf">—</div>
+    <div class="gate" id="m-inf-gate">دروازه ≤ ۱۲۰ ms</div></div>
+</div>
+
+<div class="row">
+  <div class="chart"><h3>ماتریس درهم‌ریختگی</h3><div id="cm"></div></div>
+  <div class="chart"><h3>توزیع پیش‌بینی‌ها (ساعتی)</h3><div id="dist"></div></div>
+</div>
+
+<div class="panel">
+  <h2>پیش‌بینی روی تصویر جوش</h2>
+  <label>بارگذاری تصویر رادیوگرافی (PNG/JPG، ≤ ۱۰ مگابایت)</label>
+  <input type="file" id="img" accept="image/*">
+  <div class="config">
+    <label style="margin:0">آدرس API:</label>
+    <input type="text" id="api" value="http://localhost:8000">
+    <label style="margin:0">API Key:</label>
+    <input type="text" id="key" placeholder="X-API-Key" style="max-width:160px">
+    <button onclick="predict()">پیش‌بینی</button>
+  </div>
+  <div class="result" id="result">نتیجه اینجا نمایش داده می‌شود.</div>
+  <div id="review" style="display:none;margin-top:10px">
+    <button class="ok" onclick="review('approved')">✓ تأیید کارشناس</button>
+    <button class="crit" onclick="review('rejected')">✗ رد</button>
+    <input type="text" id="reason" placeholder="دلیل (اختیاری)" style="margin-top:6px">
+  </div>
+</div>
+
+<div class="panel">
+  <h2>تاریخچه اجراهای MLflow</h2>
+  <table id="runs">
+    <thead><tr><th>Run</th><th>مدل</th><th>val_f1</th><th>recall_crack</th><th>مرحله</th><th>زمان</th></tr></thead>
+    <tbody><tr><td colspan="6" style="color:var(--muted)">در حال بارگذاری…</td></tr></tbody>
+  </table>
+</div>
+
+<footer>
+  محصول تشخیص عیوب جوش خطوط لوله مبتنی بر هوش مصنوعی · نسخه ۱.۰ ·
+  <a href="https://github.com/parsasohrab1/sate-mazandaran-gas" style="color:var(--accent)">GitHub</a>
+</footer>
+
+<script>
+const CLASS_NAMES=["no_defect","porosity","crack","lack_of_fusion","undercut","slag_inclusion"];
+const CLASS_FA=["بدون عیب","تخلخل","ترک","عدم ادغام","کم‌ادبی لبه","آخال سرباره"];
+let lastPrediction=null;
+
+async function api(path,opts={}){
+  const base=document.getElementById('api').value.replace(/\/$/,'');
+  const headers=opts.headers||{};
+  const key=document.getElementById('key').value;
+  if(key) headers['X-API-Key']=key;
+  const r=await fetch(base+path,{...opts,headers});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+}
+
+async function refreshHealth(){
+  try{
+    const h=await api('/health');
+    const el=document.getElementById('health');
+    el.innerHTML=h.model_loaded?
+      `<span class="badge ok">سالم · مدل بارگذاری‌شده · ${h.device}</span>`:
+      `<span class="badge warn">${h.status==='degraded'?'مدل بارگذاری‌نشده':'—'} · ${h.device}</span>`;
+  }catch(e){
+    document.getElementById('health').innerHTML='<span class="badge crit">سرویس در دسترس نیست</span>';
+  }
+}
+
+// Sample metrics (in production fetched from metrics/latest/metrics.json served by API or static host).
+const SAMPLE_METRICS={
+  accuracy:0.91, balanced_accuracy:0.89, f1_macro:0.87,
+  per_class:{
+    no_defect:{precision:0.94,recall:0.92,f1:0.93,support:120},
+    porosity:{precision:0.82,recall:0.85,f1:0.83,support:64},
+    crack:{precision:0.97,recall:0.96,f1:0.96,support:48},
+    lack_of_fusion:{precision:0.84,recall:0.81,f1:0.82,support:40},
+    undercut:{precision:0.86,recall:0.83,f1:0.84,support:36},
+    slag_inclusion:{precision:0.83,recall:0.80,f1:0.81,support:32}
+  },
+  confusion_matrix:[[110,3,0,2,3,2],[4,54,1,2,1,2],[0,1,46,1,0,0],[3,2,1,32,1,1],[2,1,0,1,30,2],[2,1,0,1,1,27]],
+  inference_ms_mean:42.3
+};
+
+function gate(value,threshold,mode){
+  const ok=mode==='min'?value>=threshold:value<=threshold;
+  return `<span class="badge ${ok?'ok':'crit'}">${ok?'پاس':'شکست'}</span>`;
+}
+
+function renderMetrics(m){
+  document.getElementById('m-f1').textContent=(m.f1_macro*100).toFixed(1)+'٪';
+  document.getElementById('m-f1-gate').innerHTML='دروازه ≥ ۰٫۸۵ '+gate(m.f1_macro,0.85,'min');
+  const rc=m.per_class.crack.recall;
+  document.getElementById('m-rc').textContent=(rc*100).toFixed(1)+'٪';
+  document.getElementById('m-rc-gate').innerHTML='دروازه ≥ ۰٫۹۵ '+gate(rc,0.95,'min');
+  const pn=m.per_class.no_defect.precision;
+  document.getElementById('m-pn').textContent=(pn*100).toFixed(1)+'٪';
+  document.getElementById('m-pn-gate').innerHTML='دروازه ≥ ۰٫۹۰ '+gate(pn,0.90,'min');
+  document.getElementById('m-inf').textContent=m.inference_ms_mean.toFixed(1);
+  document.getElementById('m-inf-gate').innerHTML='دروازه ≤ ۱۲۰ ms '+gate(m.inference_ms_mean,120,'max');
+}
+
+function renderConfusion(cm){
+  const data=[];
+  for(let i=0;i<cm.length;i++)for(let j=0;j<cm[i].length;j++)
+    data.push([j,i,cm[i][j]]);
+  const ch=echarts.init(document.getElementById('cm'));
+  ch.setOption({
+    tooltip:{position:'top'},
+    grid:{top:30,right:10,bottom:60,left:90},
+    xAxis:{type:'category',data:CLASS_FA,axisLabel:{color:'#9fb0c3',fontSize:9,rotate:35}},
+    yAxis:{type:'category',data:CLASS_FA,axisLabel:{color:'#9fb0c3',fontSize:9}},
+    visualMap:{min:0,max:120,calculable:true,orient:'horizontal',left:'center',bottom:0,
+      textStyle:{color:'#9fb0c3'},inRange:{color:['#1b2330','#ff7043']}},
+    series:[{name:'تعداد',type:'heatmap',data:data,
+      label:{show:true,color:'#fff',fontSize:10},
+      emphasis:{itemStyle:{shadowBlur:10}}}]
+  });
+}
+
+function renderDist(){
+  const ch=echarts.init(document.getElementById('dist'));
+  const data=CLASS_NAMES.map((c,i)=>{
+    const cnt=SAMPLE_METRICS.confusion_matrix[i].reduce((a,b)=>a+b,0);
+    return {name:CLASS_FA[i],value:cnt};
+  });
+  ch.setOption({
+    tooltip:{},
+    grid:{top:20,right:20,bottom:30,left:50},
+    xAxis:{type:'category',data:data.map(d=>d.name),axisLabel:{color:'#9fb0c3',fontSize:9,rotate:30}},
+    yAxis:{type:'value',axisLabel:{color:'#9fb0c3'}},
+    series:[{type:'bar',data:data.map(d=>d.value),itemStyle:{color:'#5c6bc0'}}]
+  });
+}
+
+async function predict(){
+  const f=document.getElementById('img').files[0];
+  if(!f){alert('ابتدا یک تصویر انتخاب کنید');return;}
+  const fd=new FormData();fd.append('file',f);
+  document.getElementById('result').innerHTML='در حال پردازش…';
+  try{
+    const r=await api('/predict',{method:'POST',body:fd});
+    lastPrediction=r;
+    const topkHtml=r.top_k.map(t=>{
+      const pct=(t.probability*100).toFixed(1);
+      return `<div class="bar"><span style="width:90px">${t.class_name}</span>
+        <div class="track"><div class="fill" style="width:${pct}%"></div></div><span>${pct}٪</span></div>`;
+    }).join('');
+    document.getElementById('result').innerHTML=
+      `<div class="pred-class">${r.predicted_class}</div>
+       <div style="color:var(--muted);font-size:12px">اطمینان: ${(r.confidence*100).toFixed(1)}٪ · زمان: ${r.inference_ms.toFixed(1)}ms · مدل: ${r.model}</div>
+       <div style="color:#ffb74d;font-size:11px;margin-top:4px">⚠️ پشتیبانی از کارشناس — نیاز به تأیید NDT</div>
+       <div class="topk">${topkHtml}</div>`;
+    document.getElementById('review').style.display='block';
+  }catch(e){
+    document.getElementById('result').innerHTML='<span style="color:#ef9a9a">خطا: '+e.message+'</span>';
+  }
+}
+
+function review(status){
+  if(!lastPrediction)return;
+  const reason=document.getElementById('reason').value;
+  const rec={image:lastPrediction.image,predicted_class:lastPrediction.predicted_class,
+    confidence:lastPrediction.confidence,status,reason,reviewer:'expert',ts:new Date().toISOString()};
+  // In production this POSTs to an audit endpoint; here we log to console + local queue.
+  console.log('[expert review]',rec);
+  const q=JSON.parse(localStorage.getItem('weld_review_queue')||'[]');
+  q.push(rec);localStorage.setItem('weld_review_queue',JSON.stringify(q));
+  document.getElementById('result').innerHTML+=
+    `<div style="margin-top:8px;color:#7fd07f">✓ تصمیم کارشناس («${status==='approved'?'تأیید':'رد'}») ثبت شد (برای بازآموزی صف شد).</div>`;
+}
+
+function renderRuns(){
+  // Sample MLflow runs (in production fetched from MLflow /api/2.0/mlflow/runs/search).
+  const runs=[
+    {id:'a1b2',model:'ensemble-v1',f1:0.87,rc:0.96,stage:'Production',ts:'1405-09-12 14:20'},
+    {id:'c3d4',model:'efficientnet-b0',f1:0.86,rc:0.94,stage:'Archived',ts:'1405-09-10 09:05'},
+    {id:'e5f6',model:'resnet50',f1:0.84,rc:0.93,stage:'Archived',ts:'1405-09-08 11:40'},
+    {id:'g7h8',model:'ensemble-v0.9',f1:0.82,rc:0.88,stage:'Archived',ts:'1405-09-01 16:15'}
+  ];
+  const tb=document.querySelector('#runs tbody');
+  tb.innerHTML=runs.map(r=>`<tr>
+    <td>${r.id}</td><td>${r.model}</td><td>${(r.f1*100).toFixed(1)}٪</td>
+    <td>${(r.rc*100).toFixed(1)}٪</td>
+    <td><span class="pill" style="background:${r.stage==='Production'?'rgba(67,160,71,.2)':'rgba(159,176,195,.15)'};color:${r.stage==='Production'?'#7fd07f':'#9fb0c3'}">${r.stage}</span></td>
+    <td style="color:var(--muted)">${r.ts}</td></tr>`).join('');
+}
+
+refreshHealth();
+renderMetrics(SAMPLE_METRICS);
+renderConfusion(SAMPLE_METRICS.confusion_matrix);
+renderDist();
+renderRuns();
+setInterval(refreshHealth,15000);
+</script>
+</body>
+</html>

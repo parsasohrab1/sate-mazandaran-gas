@@ -1,0 +1,46 @@
+# Serving policy — how models are routed in production.
+# Implements ADR-1 (ensemble on GPU, single-model fallback on CPU) and the
+# DAR §4 decision.
+
+defaults:
+  serving_model: ensemble        # primary
+  fallback_model: efficientnet_b0 # used when GPU unavailable or latency budget exceeded
+  confidence_threshold: 0.5      # below this, route to "needs human review"
+  safety_class_thresholds:      # per-class thresholds (see configs/eval.yaml)
+    crack: 0.55
+    no_defect: 0.50
+
+routing:
+  # Decision tree executed by the API before returning a prediction.
+  rules:
+    - when: "device == 'cpu' and inference_ms > 100"
+      then: "use fallback_model"
+    - when: "confidence < confidence_threshold"
+      then: "flag decision_support_only=True; route to human review queue"
+    - when: "predicted_class == 'crack' and confidence < safety_class_thresholds.crack"
+      then: "flag decision_support_only=True; mandatory NDT review"
+    - else: "return prediction with decision_support_only=True"
+
+canary:
+  # Canary deployment of a new Production candidate.
+  enabled: false
+  traffic_percent: 10
+  success_metric: f1_macro
+  success_threshold: 0.85
+  rollback_on: ["recall_crack < 0.95", "5xx_rate > 0.5%"]
+  duration_minutes: 60
+
+rollback:
+  # Automatic rollback triggers (QPM §5).
+  triggers:
+    - "test_pass_rate < 1.0"
+    - "drift_psi > 0.25 for 1h"
+    - "recall_crack < 0.90 on shadow eval set"
+  action: "promote previous Production version from registry"
+
+human_review:
+  # The model NEVER makes the final safety decision (SRS §5.4).
+  queue: "ndt-review"
+  sla_hours: 4
+  tool: "dashboard"             # experts review via the dashboard's review mode
+  feedback_loop: "mlops/drift/label_feedback.py"  # reviewed samples feed retraining

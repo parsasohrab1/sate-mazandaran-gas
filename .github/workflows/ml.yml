@@ -1,0 +1,112 @@
+name: ML Pipeline Validation
+
+# Validates the full ML pipeline on SYNTHETIC data (first validation per BRS §5).
+# Runs nightly and on changes to src/weld_defect or configs.
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "src/weld_defect/**"
+      - "configs/**"
+      - "scripts/generate_synthetic_data.py"
+      - "scripts/prepare_data.py"
+      - ".github/workflows/ml.yml"
+  schedule:
+    - cron: "0 1 * * *"   # nightly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-validate:
+    name: Synthetic-data end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MLOPS_SKIP_DVC: "1"
+      MLFLOW_TRACKING_URI: "file:./mlruns"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install deps (CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Generate synthetic data
+        run: |
+          python scripts/generate_synthetic_data.py --n-samples 600 --size 96 --out data/synthetic
+
+      - name: Prepare data (point processed at synthetic)
+        run: |
+          python - <<'PY'
+          import shutil, pathlib
+          src = pathlib.Path("data/synthetic/images")
+          dst = pathlib.Path("data/processed/images"); dst.mkdir(parents=True, exist_ok=True)
+          for p in src.glob("*.png"): shutil.copy(p, dst / p.name)
+          for name in ("train","val","test"):
+              shutil.copy(f"data/synthetic/{name}.csv", f"data/processed/{name}.csv")
+          # rewrite image paths already relative; ensure config points here
+          PY
+
+      - name: Smoke-train (1 epoch, tiny ensemble members, CPU)
+        run: |
+          python - <<'PY'
+          import yaml, pathlib
+          cfg = yaml.safe_load(pathlib.Path("configs/train.yaml").read_text(encoding="utf-8"))
+          cfg["training"]["epochs"] = 1
+          cfg["training"]["batch_size"] = 16
+          cfg["training"]["num_workers"] = 2
+          cfg["data"]["input_size"] = 96
+          cfg["data"]["image_dir"] = "data/processed/images"
+          cfg["data"]["train_split"] = "data/processed/train.csv"
+          cfg["data"]["val_split"] = "data/processed/val.csv"
+          cfg["data"]["test_split"] = "data/processed/test.csv"
+          cfg["model"]["members"] = ["custom_cnn"]   # tiny single-member for CPU CI
+          pathlib.Path("configs/train_ci.yaml").write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
+          PY
+          python -m weld_defect.cli train --config configs/train_ci.yaml
+
+      - name: Evaluate + acceptance gates
+        run: |
+          python - <<'PY'
+          import yaml, pathlib
+          cfg = yaml.safe_load(pathlib.Path("configs/eval.yaml").read_text(encoding="utf-8"))
+          cfg["model"]["checkpoint"] = "models/ensemble_best.pt"
+          cfg["model"]["input_size"] = 96
+          cfg["data"]["test_split"] = "data/processed/test.csv"
+          cfg["data"]["image_dir"] = "data/processed/images"
+          cfg["data"]["batch_size"] = 16
+          # Loosen gates for the tiny CI smoke run (still recorded)
+          cfg["acceptance"]["min_f1_macro"] = 0.10
+          cfg["acceptance"]["min_recall_crack"] = 0.10
+          cfg["acceptance"]["min_precision_no_defect"] = 0.10
+          pathlib.Path("configs/eval_ci.yaml").write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
+          PY
+          python -m weld_defect.cli evaluate --config configs/eval_ci.yaml
+
+      - name: Serve smoke test
+        run: |
+          uvicorn weld_defect.api.app:app --host 0.0.0.0 --port 8000 &
+          sleep 8
+          curl -fsS http://localhost:8000/health | tee /tmp/health.json
+          python -c "import json,sys; d=json.load(open('/tmp/health.json')); sys.exit(0 if d['model_loaded'] else 1)"
+
+      - name: Upload metrics artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-metrics
+          path: |
+            metrics/
+            mlruns/
+            models/ensemble_best.pt

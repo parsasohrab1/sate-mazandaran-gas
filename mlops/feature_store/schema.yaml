@@ -1,0 +1,53 @@
+# Feature store schema — logical view of derived features for ML.
+
+# Unlike tabular ML, the primary "features" here are the preprocessed image
+# tensors. This schema documents the *derived* statistical features used by:
+#   - drift detection (mlops/drift/drift_report.py)
+#   - data quality profiling (scripts/prepare_data.py → data_profile.json)
+#   - future lightweight baselines (e.g., classical CV on image statistics)
+
+feature_groups:
+
+  image_statistics:
+    description: "Per-image scalar statistics computed from the raw grayscale array."
+    features:
+      - {name: mean_intensity, dtype: float32, range: [0, 1], unit: normalized}
+      - {name: std_intensity, dtype: float32, range: [0, 0.5]}
+      - {name: dark_pixel_fraction, dtype: float32, range: [0, 1], threshold: 0.3}
+      - {name: bead_center_y, dtype: int32, range: [0, image_size]}
+      - {name: bead_sigma, dtype: float32, range: [3, 40]}
+    computed_by: scripts/prepare_data.py (→ data_profile.json + reference_profile.json)
+    refresh: on every prepare_data run
+    used_by: [drift_report, qpm_charts]
+
+  prediction_distribution:
+    description: "Per-class prediction frequencies over a serving window."
+    features:
+      - {name: pred_count_no_defect, dtype: int}
+      - {name: pred_count_porosity, dtype: int}
+      - {name: pred_count_crack, dtype: int}
+      - {name: pred_count_lack_of_fusion, dtype: int}
+      - {name: pred_count_undercut, dtype: int}
+      - {name: pred_count_slag_inclusion, dtype: int}
+      - {name: low_confidence_count, dtype: int, threshold: 0.5}
+    computed_by: api log aggregation (→ current_profile.json)
+    refresh: hourly
+    used_by: [drift_report, serving_policy routing]
+
+  labeling_quality:
+    description: "Inter-rater agreement metrics from the labeling protocol."
+    features:
+      - {name: cohen_kappa, dtype: float32, range: [-1, 1], target: 0.80}
+      - {name: disagreement_rate, dtype: float32, range: [0, 1]}
+      - {name: adjudicated_count, dtype: int}
+    computed_by: scripts/compute_kappa.py (→ labeling_agreement.json)
+    refresh: weekly
+    used_by: [opp_baselines, car]
+
+storage:
+  # Profiles are small JSON; no dedicated feature store DB is required at ML5
+  # for this image-centric project. If a tabular feature store is added later,
+  # point offline_store / online_store here.
+  offline: file:metrics/baselines/
+  online: file:metrics/latest/
+  retention_days: 365

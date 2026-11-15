@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: weld-defect
+  labels:
+    app.kubernetes.io/name: sate-mazandaran-gas
+    app.kubernetes.io/part-of: weld-defect-detection

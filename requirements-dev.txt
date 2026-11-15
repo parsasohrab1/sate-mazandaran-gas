@@ -1,0 +1,24 @@
+-r requirements.txt
+
+# Testing
+pytest>=7.4
+pytest-cov>=4.1
+pytest-xdist>=3.5
+pytest-mock>=3.12
+hypothesis>=6.92
+
+# Lint / type / security
+ruff>=0.1
+black>=23.12
+mypy>=1.7
+bandit>=1.7
+pre-commit>=3.6
+
+# MLOps extras
+evidently>=0.4
+great-expectations>=0.18
+
+# Docs
+mkdocs>=1.5
+mkdocs-material>=9.5
+mkdocstrings[python]>=0.24

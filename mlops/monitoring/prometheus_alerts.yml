@@ -1,0 +1,65 @@
+# Prometheus alerting rules for the weld-defect serving stack (QPM §5).
+# Loaded by the monitoring sidecar (see devops/docker-compose.yml → prometheus).
+
+groups:
+  - name: weld-defect-serving
+    interval: 60s
+    rules:
+
+      # SLO: inference latency p95 ≤ 120 ms (BRS acceptance gate)
+      - alert: HighInferenceLatency
+        expr: histogram_quantile(0.95, rate(weld_predict_duration_seconds_bucket[5m])) * 1000 > 120
+        for: 10m
+        labels: {severity: warning, cmmi: qpm}
+        annotations:
+          summary: "Predict p95 latency above 120ms gate"
+          description: "p95 = {{ $value }}ms — QPM §5 trigger; check serving_policy fallback."
+
+      # Safety: never miss cracks — track recall on shadow eval set
+      - alert: LowCrackRecall
+        expr: weld_recall_crack < 0.95
+        for: 5m
+        labels: {severity: critical, cmmi: qpm, safety: true}
+        annotations:
+          summary: "Recall on crack class below 0.95 (SRS §5.4)"
+          description: "Current recall_crack = {{ $value }} — mandatory CAR."
+
+      # Drift: PSI above alarm threshold (OPP/QPM)
+      - alert: DataDriftAlarm
+        expr: weld_drift_psi > 0.25
+        for: 1h
+        labels: {severity: warning, cmmi: opp}
+        annotations:
+          summary: "Data drift PSI above alarm threshold"
+
+      # Availability: 5xx rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.005
+        for: 10m
+        labels: {severity: warning, cmmi: qpm}
+        annotations:
+          summary: "HTTP 5xx rate > 0.5% (NFR-R2)"
+
+      # Model health: model not loaded
+      - alert: ModelNotLoaded
+        expr: weld_model_loaded == 0
+        for: 2m
+        labels: {severity: critical, cmmi: qpm}
+        annotations:
+          summary: "Serving model not loaded — /health degraded"
+
+      # Pipeline: CI test pass rate
+      - alert: CIPassRateDropped
+        expr: weld_ci_test_pass_rate < 1.0
+        for: 1h
+        labels: {severity: warning, cmmi: qpm}
+        annotations:
+          summary: "CI test pass rate below 100%"
+
+      # Labeling quality (OPP)
+      - alert: LowLabelingKappa
+        expr: weld_labeling_kappa < 0.80
+        for: 1h
+        labels: {severity: warning, cmmi: opp}
+        annotations:
+          summary: "Inter-rater kappa below 0.80 — review labeling protocol"

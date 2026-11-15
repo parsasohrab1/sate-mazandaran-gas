@@ -1,0 +1,81 @@
+site_name: Sate Mazandaran Gas — AI Weld Defect Detection
+site_description: >-
+  Technical documentation for the AI-based weld-defect detection system for
+  pipeline radiographs, commissioned by Sate Mazandaran Gas (Petro Pala Toos).
+site_url: https://github.com/parsasohrab1/sate-mazandaran-gas
+repo_name: parsasohrab1/sate-mazandaran-gas
+repo_url: https://github.com/parsasohrab1/sate-mazandaran-gas
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: fa
+  direction: rtl
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: deep orange
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - scheme: slate
+      primary: deep orange
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.arithmatex:
+      generic: true
+  - tables
+
+nav:
+  - خانه: index.md
+  - نیازمندی‌های کسب‌وکار (BRS): BRS.md
+  - نیازمندی‌های نرم‌افزار (SRS): SRS.md
+  - معماری سیستم: Architecture.md
+  - راهنمای API: API.md
+  - راهنمای استقرار: Deployment.md
+  - راهنمای کاربری: UserGuide.md
+  - فرهنگ داده: DataDictionary.md
+  - پروتکل برچسب‌گذاری: LabelingProtocol.md
+  - دارایی‌های فرآیندی CMMI ML5:
+      - نمای کلی: CMMI_ML5/00_overview.md
+      - OPF — متمرکزسازی سازمانی فرآیند: CMMI_ML5/01_OPF.md
+      - OPP — عملکرد فرآیند سازمانی: CMMI_ML5/02_OPP.md
+      - OID — نوآوری و استقرار سازمانی: CMMI_ML5/03_OID.md
+      - CAR — تحلیل علل و ریشه‌ها: CMMI_ML5/04_CAR.md
+      - QPM — مدیریت فرآیند کمی: CMMI_ML5/05_QPM.md
+      - PAL — کتابخانه دارایی‌های فرآیند: CMMI_ML5/06_PAL.md
+      - DAR — تحلیل تصمیم‌گیری: CMMI_ML5/07_DAR.md
+      - ارزیابی بلوغ: CMMI_ML5/08_MaturityAssessment.md
+      - تعاریف معیارها: CMMI_ML5/09_MetricsDefinitions.md

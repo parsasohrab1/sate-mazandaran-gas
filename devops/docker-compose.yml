@@ -1,0 +1,86 @@
+# Full local/dev stack: API + MLflow + dashboard + (optional) Postgres for MLflow backend.
+# Usage:  docker compose -f devops/docker-compose.yml up -d
+#         docker compose -f devops/docker-compose.yml down
+
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: devops/docker/Dockerfile.api
+    image: sate-mazandaran-gas/api:1.0.0
+    container_name: weld-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: dev
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT: weld-defect-detection
+      MODEL_CHECKPOINT: /models/ensemble_best.pt
+      API_KEY: ${API_KEY:-dev-only-key-change-me}
+      API_MAX_UPLOAD_MB: "10"
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+    volumes:
+      - ../models:/models:ro
+      - ../data:/data:ro
+      - ../metrics:/app/metrics
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      mlflow:
+        condition: service_healthy
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mlflow
+    image: sate-mazandaran-gas/mlflow:1.0.0
+    container_name: weld-mlflow
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI:-sqlite:////mlruns/mlflow.db}
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: ${MLFLOW_DEFAULT_ARTIFACT_ROOT:-file:///mlartifacts}
+    volumes:
+      - mlflow_data:/mlruns
+      - mlflow_artifacts:/mlartifacts
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: devops/docker/Dockerfile.dashboard
+    image: sate-mazandaran-gas/dashboard:1.0.0
+    container_name: weld-dashboard
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+
+  # Uncomment for a Postgres-backed MLflow registry in production-like dev.
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: mlflow
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mlflow}
+  #     POSTGRES_DB: mlflow
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+volumes:
+  mlflow_data:
+  mlflow_artifacts:
+  # pg_data:
