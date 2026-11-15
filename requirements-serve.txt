@@ -1,0 +1,27 @@
+# Minimal dependencies to SERVE the trained custom_cnn model (FastAPI backend).
+#
+# This is a lightweight subset of requirements.txt — it excludes the heavy
+# optional stack (timm, albumentations, mlflow, dvc, seaborn, matplotlib) that
+# is only needed for full ensemble TRAINING or MLOps, not for inference.
+#
+# torch / torchvision are NOT listed here because on Windows you want the
+# CPU-only wheel from PyTorch's index (much smaller than the default CUDA
+# wheel). run.ps1 installs them separately via:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#
+# For full ensemble training (configs/train.yaml), use `pip install -e .`
+# instead, which pulls the complete dependency set.
+
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+scikit-learn>=1.3
+scikit-image>=0.21
+Pillow>=10.0
+opencv-python-headless>=4.8
+fastapi>=0.104
+uvicorn[standard]>=0.24
+pydantic>=2.5
+pydantic-settings>=2.1
+python-multipart>=0.0.6
+PyYAML>=6.0
