@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (without v prefix)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build changelog
+        id: cl
+        run: |
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV" ]; then
+            git log --pretty=format:"- %s (%h)" "$PREV"..HEAD > CHANGELOG_SECTION.md
+          else
+            git log --pretty=format:"- %s (%h)" > CHANGELOG_SECTION.md
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          name: Release v${{ steps.v.outputs.version }}
+          body_path: CHANGELOG_SECTION.md
+          draft: false
+          prerelease: ${{ contains(steps.v.outputs.version, '-') }}
+          files: |
+            LICENSE
+            README.md
+            docs/BRS.md
+            docs/SRS.md
+
+      - name: Tag CMMI ML5 release snapshot
+        run: |
+          echo "Release v${{ steps.v.outputs.version }} — PAL snapshot (docs/CMMI_ML5/06_PAL.md)." >> metrics/release_log.txt 2>/dev/null || \
+          mkdir -p metrics && echo "Release v${{ steps.v.outputs.version }} — PAL snapshot." > metrics/release_log.txt

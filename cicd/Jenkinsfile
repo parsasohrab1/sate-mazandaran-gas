@@ -1,0 +1,109 @@
+// Jenkinsfile — Jenkins declarative pipeline for the weld-defect product.
+// Mirrors the GitHub Actions / GitLab CI stages. Configure a Jenkins agent with
+// Docker, Python 3.11, and Helm/kubectl; provide registry + kubeconfig credentials.
+
+pipeline {
+  agent { label 'linux && docker' }
+
+  options {
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 45, unit: 'MINUTES')
+    disableConcurrentBuilds()
+  }
+
+  environment {
+    PYTHON_VERSION = '3.11'
+    IMAGE          = "${env.DOCKER_REGISTRY ?: 'registry'}/weld-defect-api"
+    TAG            = "${env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'dev'}"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Setup') {
+      steps {
+        sh '''
+          python3 -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -e .
+        '''
+      }
+    }
+
+    stage('Lint & Security') {
+      parallel {
+        stage('Ruff')      { steps { sh 'ruff check src tests' } }
+        stage('Black')     { steps { sh 'black --check src tests' } }
+        stage('Bandit')    { steps { sh 'bandit -r src -c pyproject.toml || true' } }
+      }
+    }
+
+    stage('Test') {
+      steps {
+        sh '''
+          export MLOPS_SKIP_DVC=1
+          export MLFLOW_TRACKING_URI=file:./mlruns
+          pytest -m "not slow and not gpu and not integration" --cov=weld_defect --cov-report=xml --cov-report=term
+        '''
+      }
+      post { always { junit 'test-results.xml' /* if generated */ ; archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true } }
+    }
+
+    stage('Build & Push') {
+      when { anyOf { branch 'main'; buildingTag() } }
+      steps {
+        sh '''
+          docker build -f devops/docker/Dockerfile.api -t $IMAGE:$TAG -t $IMAGE:latest .
+          docker login -u $DOCKER_USER -p $DOCKER_PASS $DOCKER_REGISTRY
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
+        '''
+      }
+    }
+
+    stage('Scan') {
+      when { anyOf { branch 'main'; buildingTag() } }
+      steps {
+        sh 'trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed $IMAGE:$TAG'
+      }
+    }
+
+    stage('Deploy') {
+      when { anyOf { branch 'main'; buildingTag() } }
+      environment {
+        KUBECONFIG = credentials('kubeconfig')
+      }
+      steps {
+        sh '''
+          helm upgrade --install weld-defect devops/helm/weld-defect \
+            --namespace weld-defect --create-namespace \
+            --set image.repository=$IMAGE --set image.tag=$TAG \
+            --set ingress.enabled=true --set ingress.host=$INGRESS_HOST \
+            --set secrets.apiKey=$WELD_API_KEY --set secrets.jwtSecret=$WELD_JWT_SECRET \
+            --wait --timeout 5m
+          kubectl -n weld-defect rollout status deploy/weld-api --timeout=5m
+        '''
+      }
+    }
+
+    stage('Smoke test') {
+      when { anyOf { branch 'main'; buildingTag() } }
+      steps {
+        sh '''
+          kubectl -n weld-defect port-forward svc/weld-api 8000:80 &
+          sleep 5
+          curl -fsS http://localhost:8000/health
+        '''
+      }
+    }
+  }
+
+  post {
+    always { cleanWs() }
+    success { echo "✅ Pipeline success: ${env.BUILD_URL}" }
+    failure { echo "❌ Pipeline failed — see logs." }
+  }
+}

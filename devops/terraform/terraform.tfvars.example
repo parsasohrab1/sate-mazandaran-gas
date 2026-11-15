@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars and fill in. NEVER commit the filled file.
+region              = "eu-central-1"
+environment         = "production"
+gpu_enabled         = true
+image_repo          = "registry/weld-defect-api"
+image_tag           = "1.0.0"
+ingress_host        = "weld-defect.satemazandaran.internal"
+mlflow_db_password  = "REPLACE_WITH_STRONG_PASSWORD"

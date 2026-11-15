@@ -1,0 +1,61 @@
+PROPRIETARY AND CONFIDENTIAL
+
+Copyright (c) 1404-1405 / 2025-2026 Petro Pala Toos Co. (سهامی خاص)
+National ID: 10320833145 | Registration No.: 431829
+Tehran, Gilan St., Rudsar St., Khorazmi Innovation Center, No. 8, 4th Floor
+
+Project: "Study and Design of an Artificial Intelligence-Based Method for
+Detecting Weld Defects in Pipelines" — commissioned by Sate Mazandaran Gas
+Company (شرکت گاز استان مازندران), Iran National Gas Company.
+
+All rights reserved. This software and accompanying documentation are the
+proprietary and confidential property of Petro Pala Toos and are licensed
+solely to Sate Mazandaran Gas Company under the project contract
+(پیمان/تفاهم‌نامه) dated 1405/07/29.
+
+1. DEFINITIONS
+   "Software" means this repository, its source code, models, data protocols,
+   documentation, and build artifacts.
+   "Licensee" means Sate Mazandaran Gas Company and its authorized personnel.
+   "Licensor" means Petro Pala Toos Co.
+
+2. GRANT
+   The Licensor grants the Licensee a non-exclusive, non-transferable,
+   non-sublicensable, royalty-free, internal, revocable license to install,
+   use, and operate the Software solely for the purpose of detecting and
+   classifying weld defects in the Licensee's pipeline inspection workflow,
+   for the duration of the project contract and any maintenance extension.
+
+3. RESTRICTIONS
+   The Licensee shall NOT:
+   (a) redistribute, sell, lease, or lend the Software or any derivative;
+   (b) reverse engineer, decompile, or disassemble the trained models;
+   (c) remove or alter any confidentiality or copyright notice;
+   (d) use the Software for any safety-critical automatic decision without
+       the prior technical validation and written sign-off of a qualified
+       inspection specialist, as required by the SRS (see docs/SRS.md §5.4).
+
+4. INTELLECTUAL PROPERTY
+   All intellectual property rights in the Software, including improvements,
+   trained models, and labeling protocols, remain with the Licensor, except
+   for the Licensee's pipeline-specific data and labels, which remain the
+   Licensee's confidential property.
+
+5. DISCLAIMER
+   The Software is a decision-support tool ("پشتیبان کارشناس"), NOT a
+   replacement for qualified human inspection. Outputs must be reviewed by
+   certified NDT personnel per API 1104, ASME Section V, ASME Section VIII,
+   and ASME B31.3. The Licensor is not liable for decisions taken solely on
+   the basis of the Software without such review.
+
+6. TERM AND TERMINATION
+   The license terminates automatically upon breach of §3 or expiry of the
+   project contract. Upon termination the Licensee shall cease use and
+   destroy all copies, certifying destruction in writing.
+
+7. GOVERNING LAW
+   This License is governed by the laws of the Islamic Republic of Iran.
+   Disputes are settled in the competent courts of Tehran unless the
+   contract states otherwise.
+
+Contact: r&d@petropalatoos.ir | +98 21 88918530

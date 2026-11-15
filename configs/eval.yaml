@@ -1,0 +1,54 @@
+# Evaluation configuration — single source of truth for `make evaluate`.
+# Runs on the held-out test split and produces metrics + error analysis.
+
+model:
+  checkpoint: models/ensemble_best.pt
+  architecture: ensemble
+  input_size: 224
+  num_classes: 6
+
+data:
+  test_split: data/processed/test.csv
+  image_dir: data/processed/images
+  batch_size: 64
+  num_workers: 4
+  class_names:
+    - no_defect
+    - porosity
+    - crack
+    - lack_of_fusion
+    - undercut
+    - slag_inclusion
+
+eval:
+  thresholds:
+    # per-class confidence thresholds tuned on val set (DAR analysis)
+    no_defect: 0.50
+    porosity: 0.45
+    crack: 0.55
+    lack_of_fusion: 0.50
+    undercut: 0.50
+    slag_inclusion: 0.48
+  top_k: 1
+  calibration: temperature_scaling   # none | temperature_scaling | isoton|y
+
+metrics:
+  primary: f1_macro
+  also: [accuracy, precision_macro, recall_macro, balanced_accuracy, roc_auc_ovr,
+         cohen_kappa, matthews_corrcoef]
+  confusion_matrix: true
+  per_class_report: true
+  roc_curves: true
+
+acceptance:                           # agreed with Sate Mazandaran Gas (BRS §6)
+  min_f1_macro: 0.85
+  min_recall_crack: 0.95              # safety-critical class — never miss
+  min_precision_no_defect: 0.90       # avoid false negatives of "sound"
+  max_inference_ms: 120               # per image, single CPU thread
+  require_expert_review: true         # model is decision-support only
+
+artifacts:
+  report_dir: metrics/latest
+  mlflow_run: link                     # attach eval metrics to the producing training run
+  save_misclassified: true             # dump misclassified crops for CAR analysis
+  error_analysis_json: metrics/latest/error_analysis.json

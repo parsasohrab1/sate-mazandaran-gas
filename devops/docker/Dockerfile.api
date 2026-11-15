@@ -1,0 +1,43 @@
+# Multi-stage Dockerfile for the FastAPI inference service.
+# Non-root, slim final image. Built by `make docker-build` / CI.
+
+# ---------- builder ----------
+FROM python:3.11-slim AS builder
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+WORKDIR /build
+COPY pyproject.toml requirements.txt setup.py MANIFEST.in ./
+COPY src ./src
+COPY configs ./configs
+COPY scripts ./scripts
+RUN pip install --upgrade pip wheel && \
+    pip wheel --wheel-dir /wheels -r requirements.txt . && \
+    pip wheel --wheel-dir /wheels uvicorn[standard]
+
+# ---------- runtime ----------
+FROM python:3.11-slim AS runtime
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    APP_ENV=production APP_LOG_LEVEL=INFO \
+    DATA_ROOT=/data MODEL_CHECKPOINT=/models/ensemble_best.pt \
+    MLFLOW_TRACKING_URI=http://mlflow:5000
+WORKDIR /app
+
+# Install only runtime wheels (no build toolchain in final image)
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
+
+# Non-root user
+RUN useradd -r -u 10001 -g root weld && \
+    mkdir -p /app /data /models /app/configs /app/scripts && \
+    chown -R weld:root /app /data /models
+
+COPY --chown=weld:root src ./src
+COPY --chown=weld:root configs ./configs
+COPY --chown=weld:root scripts ./scripts
+COPY --chown=weld:root LICENSE README.md ./
+
+USER 10001
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
+
+CMD ["uvicorn", "weld_defect.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

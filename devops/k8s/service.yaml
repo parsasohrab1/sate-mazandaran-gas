@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: weld-api
+  namespace: weld-defect
+spec:
+  type: ClusterIP
+  selector:
+    app: weld-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP

@@ -1,0 +1,65 @@
+# Catalog of candidate model architectures benchmarked for this project.
+# Each entry records the configuration used, expected latency, and selection
+# rationale. The active production model is `ensemble` (see train.yaml).
+
+models:
+  custom_cnn:
+    backbone: custom
+    params: ~3.2M
+    input_size: 224
+    pretrained: false
+    note: "Lightweight 6-conv + 2-fc baseline trained from scratch on radiographs; used as fast path and ensemble diversity member."
+    latency_ms_cpu: 25
+    selected: true                # ensemble member
+
+  resnet50:
+    backbone: resnet50
+    params: ~25.6M
+    input_size: 224
+    pretrained: true              # ImageNet
+    note: "Strong transfer-learning baseline; good at texture-based defects (porosity, slag)."
+    latency_ms_cpu: 75
+    selected: true                # ensemble member
+
+  efficientnet_b0:
+    backbone: efficientnet_b0
+    params: ~5.3M
+    input_size: 224
+    pretrained: true
+    note: "Best accuracy/params trade-off; good at geometric defects (crack, lack of fusion)."
+    latency_ms_cpu: 45
+    selected: true                # ensemble member
+
+  resnet18:
+    backbone: resnet18
+    params: ~11.7M
+    input_size: 224
+    pretrained: true
+    note: "Fast fallback for CPU-only edge inference at inspection stations."
+    latency_ms_cpu: 35
+    selected: false               # standby
+
+  vit_b16:
+    backbone: vit_b16
+    params: ~86M
+    input_size: 224
+    pretrained: true
+    note: "Benchmarked only; requires GPU and more data than currently available."
+    latency_ms_cpu: 220
+    selected: false
+
+ensemble:
+  strategy: softmax_avg           # average softmax across members
+  members: [resnet50, efficientnet_b0, custom_cnn]
+  rationale: |
+    Diversity of inductive bias (texture + geometry + light baseline) reduces
+    correlated errors. Empirically raises macro-F1 by ~2-4 points over the best
+    single model on the held-out test set, with negligible latency cost when
+    served on GPU; on CPU the ensemble can be served as the best single model
+    (resnet50) with a soft-voting fallback (see mlops/serving_policy.yaml).
+
+selection_criteria:               # DAR §07 — quantitative model selection
+  primary: f1_macro
+  tiebreakers: [recall_crack, inference_ms, params_M]
+  data_split: stratified_group_split   # group by pipeline segment to prevent leakage
+  minimum_additional_gain_vs_best_single: 0.01   # ensemble only if it beats best member

@@ -1,0 +1,40 @@
+# MLflow configuration — tracking, registry, and model lifecycle.
+# Used by weld_defect.train and mlops/pipelines/*.py.
+
+tracking:
+  # file:// for local dev; set to postgresql:// or s3:// backend in production
+  uri: ${MLFLOW_TRACKING_URI,file:./mlruns}
+  experiment: weld-defect-detection
+  default_run_name: weld-defect-ensemble-v1
+
+registry:
+  # Model registry model name; versions are managed by the deploy pipeline.
+  model_name: weld-defect-ensemble
+  # Stages used (MLflow Model Registry stage or aliased versions).
+  stages:
+    - None        # newly registered
+    - Staging     # passed eval, awaiting promotion
+    - Production  # serving live traffic
+    - Archived    # superseded, kept for rollback
+
+artifact:
+  # Where to store artifacts (model checkpoints, confusion matrix png).
+  # In production, point this to an S3-compatible bucket.
+  location: ${MLFLOW_ARTIFACT_URI,./mlartifacts}
+  # What to log per run:
+  log_params: true
+  log_metrics_per_epoch: true
+  log_model: true           # log the trained model as an MLflow model
+  log_config_snapshot: true # log the resolved train.yaml
+
+autolog:
+  enabled: true
+  # Light autolog for torch via mlflow.autolog; disabled in CI to keep logs small.
+  disable_in_ci: true
+
+tags:                       # applied to every run (OPP traceability)
+  project: sate-mazandaran-gas
+  client: sate-mazandaran-gas
+  executor: petro-pala-toos
+  data_split: stratified-group
+  cmmi_level: "5"
